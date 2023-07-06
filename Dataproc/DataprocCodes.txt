@@ -1,0 +1,17 @@
+spark-shell --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.1.2 --jars=gs://spark-lib/bigquery/spark-bigquery-latest_2.12.jar
+	import spark.implicits._
+	import org.apache.spark.sql.types._
+	import org.apache.spark.sql.functions
+	import java.sql.Timestamp
+	import org.apache.spark.sql.streaming.Trigger.ProcessingTime
+	import org.apache.spark.sql.types.{StructType, StructField, TimestampType}
+
+	val bucket = "idsproject"
+	spark.conf.set("temporaryGcsBucket",bucket)
+	spark.conf.set("parentProject","delta-lore-369612")
+
+	val kafkaDF = spark.readStream.format("kafka").option("kafka.bootstrap.servers","35.226.61.204:9092").option("subscribe","flightapi0").option("failonDataLoss","false").load
+	val schema = StructType(List(StructField("flight_date",StringType),StructField("flight_status",StringType),StructField("depAirport",StringType),StructField("timezone",StringType),StructField("arrAirport",StringType),StructField("airlineName",StringType)))
+	val activationDF = kafkaDF.select(from_json($"value".cast("string"),schema).alias("activation"))
+	val df = activationDF.select($"activation"("flight_date").alias("flight_date"),$"activation"("flight_status").alias("flight_status"),$"activation"("depAirport").alias("depAirport"),$"activation"("timezone").alias("timezone"),$"activation"("arrAirport").alias("arrAirport"),$"activation"("airlineName").alias("airlineName"))
+	val sparktobq = df.writeStream.outputMode("append").format("bigquery").option("table","idsdb.idsdb_table").option("checkpointLocation", "path/to/checkpoint/dir/in/hdfs").option("credentialsFile","/home/serefcanhel/delta-lore-369612-167298c7b11b.json").option("failOnDataLoss",false).option("truncate",false).start().awaitTermination()
